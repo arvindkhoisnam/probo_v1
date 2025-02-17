@@ -34,7 +34,7 @@ type STOCK_BALANCE struct {
 }
 
 type Engine struct {
-	Orderbook []ORDERBOOK
+	Markets []ORDERBOOK
 	InrBalance INR_BALANCE
 	StockBalance STOCK_BALANCE
 }
@@ -44,10 +44,25 @@ var (
 	engineInstance *Engine
 )
 
+type Data struct {
+	UserId    string `json:"userId,omitempty"`
+	Stock     string `json:"stock,omitempty"`
+	StockType string `json:"stockType,omitempty"`
+	OrderType string `json:"orderType,omitempty"`
+	Quantity  int    `json:"quantity,omitempty"`
+	Price     int    `json:"price,omitempty"`
+	Amount    int    `json:"amount,omitempty"`
+}
+type Incoming struct {
+	Event   string `json:"event"`
+	Payload Data
+}
+
+
 func InitEngine() *Engine {
 	once.Do(func ()  {
 		engineInstance = &Engine{
-			Orderbook: make([]ORDERBOOK, 0),
+			Markets: make([]ORDERBOOK, 0),
 			InrBalance: INR_BALANCE{
 				User: make(map[string]userBalance),
 			},
@@ -59,13 +74,36 @@ func InitEngine() *Engine {
 	return engineInstance
 }
 
+func (e *Engine)StartEngine(incoming Incoming){
+	switch incoming.Event {
+	case "createMarket" :
+		e.CreateMarket(incoming.Payload.Stock)
+	case "createUser" :
+		e.CreateUser(incoming.Payload.UserId)
+	case "onramp" :
+		e.OnrampINR(incoming.Payload.UserId,incoming.Payload.Amount)
+	case "getInrBal" :
+		e.GetInrBal(incoming.Payload.UserId)
+	case "getStockBal" :
+		e.GetStockBal(incoming.Payload.UserId)
+	case "allMarkets" :
+		e.AllMarkets()
+	case "mint" :
+		e.Mint(incoming.Payload.UserId,incoming.Payload.Stock,incoming.Payload.Quantity,incoming.Payload.Price)
+	case "placeOrder":
+		e.PlaceOrder(incoming.Payload.UserId,incoming.Payload.Stock,incoming.Payload.StockType,incoming.Payload.OrderType,incoming.Payload.Quantity,incoming.Payload.Price)
+	}
+
+}
+
 func (e *Engine)CreateMarket(stock string){
-	if exists := e.checkStock(stock);exists{
+	if _,exists := e.checkMarket(stock);exists{
 		fmt.Println("ALREADY EXISTS")
 			return
 	}
 	orderbook := CreateOrderbook(stock)
-	e.Orderbook = append(e.Orderbook, *orderbook)
+	e.Markets = append(e.Markets, *orderbook)
+	fmt.Println(e.Markets)
 }
 
 func (e *Engine)CreateUser(userId string){
@@ -117,7 +155,7 @@ type market struct{
 }
 func (e *Engine)AllMarkets()[]market{
 	var allMarkets []market
-	for _, val := range e.Orderbook{
+	for _, val := range e.Markets{
 		m := market{
 			stockSymbol: val.StockSymbol,
 			currYesPrice: val.CurrYesPrice,
@@ -129,8 +167,8 @@ func (e *Engine)AllMarkets()[]market{
 }
 
 func (e *Engine)Mint(userId, stock string, qty,price int){
-	if exists := e.checkStock(stock); !exists{
-		fmt.Printf("Market does not exist for %s stock.\n",stock)
+	if _,exists := e.checkMarket(stock); !exists{
+		fmt.Printf("Markets does not exist for %s stock.\n",stock)
 		return
 	}
 
@@ -162,11 +200,19 @@ func (e *Engine)Mint(userId, stock string, qty,price int){
 
 
 func (e *Engine)PlaceOrder(userId,stock,stockType,orderType string, quantity,price int){
-	if exists := e.checkStock(stock); !exists{
-		fmt.Printf("Market does not exist for %s stock.\n",stock)
+	 market ,exists := e.checkMarket(stock)
+	if !exists{
+		fmt.Printf("Markets does not exist for %s stock.\n",stock)
+		return
+	}
+	sufficientStocks := e.checkAndLockStock(userId,stock,stockType,quantity)
+
+	if !sufficientStocks {
+		fmt.Println("failed at checkAndLock")
 		return
 	}
 
+	market.PlaceSellOrder(userId,stockType,quantity,price)
 
 }
 
@@ -176,13 +222,13 @@ func (e *Engine) checkUser(userId string)  bool {
 	return exists
 }
 
-func (e *Engine)checkStock(stock string)bool{
-	for _, val := range e.Orderbook {
+func (e *Engine)checkMarket(stock string)(*ORDERBOOK,bool){
+	for _, val := range e.Markets {
 		if val.StockSymbol == stock{
-			return true
+			return &val,true
 		}
 	}
-	return false
+	return nil, false
 }
 
 func (e *Engine)checkInrBal(userId string, request int)bool{
@@ -193,9 +239,28 @@ func (e *Engine)checkInrBal(userId string, request int)bool{
 	return false
 }
 
-func (e *Engine)checkAndLockStock(userId,stock,stockType string, quantity int ){
-	if userStocks,exists := e.StockBalance.User[userId]; !exists {
-		fmt.Printf("You do not have %s stocks",stock)
-		return
+func (e *Engine)checkAndLockStock(userId,stock,stockType string, quantity int ) bool {
+	var st StockType
+	if stockType == "yes" {
+		st = YesStock
+	}else if stockType == "no" {
+		st = NoStock
+	} else {
+		fmt.Println("stock type not available")
+		return false
 	}
+	 userStocks,exists := e.StockBalance.User[userId].Symbol[stock].Type[st]; 
+	if !exists {
+		fmt.Printf("You do not have %s stocks",stock)
+		return false
+	}
+	if userStocks.Available < quantity {
+		fmt.Printf("You do not have enough %s %s stocks \n",stockType,stock)
+		return false
+	}
+	userStocks.Available -= quantity
+	userStocks.Locked += quantity
+
+	e.StockBalance.User[userId].Symbol[stock].Type[st] = userStocks
+	return true
 }

@@ -1,5 +1,7 @@
 package packages
 
+import "fmt"
+
 type orderType int
 const (
 	Yes orderType = iota 
@@ -34,17 +36,36 @@ func CreateOrderbook(stock string) *ORDERBOOK {
 		CurrYesPrice: 0,
 		CurrNoPrice: 0,
 		Buy: buyOrderbook{
-			Type: map[orderType]strikePrice{
-				Yes: {},
-				No:  {},
-			},
+			Type: map[orderType]strikePrice{},
 		},
 		Sell: sellOrderbook{
 			Type: map[orderType]strikePrice{
-				Yes :{},
-				No:{},
+				Yes : {
+					Strike: map[int]orders{},
+				},
+				No : {
+					Strike: map[int]orders{},
+				},
 			},
 		},
 	}
 	return &ob
 }
+
+func (ob *ORDERBOOK)PlaceSellOrder(userId,stockType string, quantity,price int){
+	var st orderType
+	if stockType == "yes" {
+		st = Yes
+	}else if stockType == "no" {
+		st = No
+	}
+    strike := ob.Sell.Type[st].Strike[price]
+	strike.TotalOrders += quantity
+	if strike.Order == nil {
+		strike.Order = map[string]int{}
+	}
+	strike.Order[userId] += quantity
+	ob.Sell.Type[st].Strike[price] = strike
+	fmt.Println(ob.Sell)
+}
+func (ob *ORDERBOOK)PlaceBuyOrder(){}
