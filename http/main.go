@@ -18,6 +18,10 @@ func routes(app *gin.Engine){
 		api.POST("/symbol/create/:symbol",routeHandlers.CreateMarket)
 		api.POST("/user/create/:userId",routeHandlers.CreateUser)
 		api.POST("/onramp/inr",routeHandlers.OnrampINR)
+		api.POST("/trade/mint",routeHandlers.Mint)
+		api.GET("/balances/inr/:userId",routeHandlers.GetInrBal)
+		api.GET("/balances/stock/:userId",routeHandlers.GetStockBal)
+		api.GET("allmarkets",routeHandlers.AllMarkets)
 	}
 }
 

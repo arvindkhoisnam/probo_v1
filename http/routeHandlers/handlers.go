@@ -19,8 +19,8 @@ func CreateMarket(c *gin.Context){
 			Stock: symbol,
 		},
 	}
-	redisManager.PushToRedisAwait(data)
-	c.JSON(200,gin.H{"message":fmt.Sprintf("%s successfully created.",symbol)})
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"message":outgoing.Message})
 }
 
 func CreateUser(c *gin.Context){
@@ -31,17 +31,17 @@ func CreateUser(c *gin.Context){
 			UserId: userId,
 		},
 	}
-	redisManager.PushToRedisAwait(data)
-	c.JSON(200,gin.H{"message":fmt.Sprintf("%s successfully created.",userId)})
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"message": outgoing.Message})
 }
 
 func OnrampINR(c *gin.Context){
 	type reqBody struct {
 		UserId string `json:"userId"`
-		Amount int `json:"amount"`
+		Amount int 	  `json:"amount"`
 	}
 	body := &reqBody{}
-	if err := c.ShouldBindJSON(&body); err != nil {
+	if err := c.ShouldBindJSON(body); err != nil {
 		c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
 		return
 		}
@@ -53,6 +53,74 @@ func OnrampINR(c *gin.Context){
 		},
 	}
 
-	redisManager.PushToRedisAwait(data)
-	c.JSON(200,gin.H{"message":fmt.Sprintf("Successfully onramped %d to %s",body.Amount,body.UserId)})
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"message": outgoing.Message})
+}
+
+func GetInrBal(c *gin.Context){
+	userId := c.Param("userId")
+	data := &redisManager.Incoming{
+		Event: "getInrBal",
+		Payload: redisManager.Data{
+			UserId: userId,
+		},
+	}
+
+	outgoing := redisManager.PushToRedisAwait(data)
+	fmt.Println(outgoing)
+	temp := &redisManager.Outgoing{
+		Payload: redisManager.Data2{
+			INRBalance: outgoing.Payload.INRBalance,
+		},
+	}
+	c.JSON(outgoing.StatusCode,gin.H{"data": temp})
+}
+
+func Mint(c *gin.Context){
+	type reqBody struct {
+		UserId 	 string `json:"userId"`
+		Stock    string `json:"stock"`
+		Quantity int  	`json:"quantity"`
+		Price 	 int 	`json:"price"`
+	}
+
+	body := &reqBody{}
+	if err := c.ShouldBindJSON(body); err != nil {
+		c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+		}
+	data := &redisManager.Incoming{
+		Event: "mint",
+		Payload: redisManager.Data{
+			UserId: body.UserId,
+			Stock: body.Stock,
+			Quantity: body.Quantity,
+			Price: body.Price,
+		},
+	}
+
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"message":outgoing.Message})
+}
+
+func GetStockBal(c *gin.Context){
+	userId := c.Param("userId")
+
+	data := &redisManager.Incoming{
+		Event: "getStockBal",
+		Payload: redisManager.Data{
+			UserId: userId,
+		},
+	}
+
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"data":outgoing.Payload.StockBalance})
+}
+
+func AllMarkets(c *gin.Context){
+	data:= &redisManager.Incoming{
+		Event: "allMarkets",
+	}
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"data":outgoing.Payload.Markets})
 }

@@ -1,33 +1,35 @@
 package packages
 
-import "fmt"
+import (
+	"fmt"
+)
 
-type orderType int
+type OrderType int
 const (
-	Yes orderType = iota 
+	Yes OrderType = iota 
 	No
 )
-type orders struct {
+type Orders struct {
 	TotalOrders int
 	Order map[string] int
 }
 
-type strikePrice struct {
-	Strike map[int] orders
+type StrikePrice struct {
+	Strike map[int] Orders
 }
 
-type buyOrderbook struct {
-	Type map[orderType] strikePrice
+type BuyOrderbook struct {
+	Type map[OrderType] StrikePrice
 }
-type sellOrderbook struct {
-	Type map[orderType] strikePrice
+type SellOrderbook struct {
+	Type map[OrderType] StrikePrice
 }
 type ORDERBOOK struct{
 	StockSymbol  string
 	CurrYesPrice int
 	CurrNoPrice  int
-	Buy          buyOrderbook
-	Sell         sellOrderbook
+	Buy          BuyOrderbook
+	Sell         SellOrderbook
 }
 
 func CreateOrderbook(stock string) *ORDERBOOK {
@@ -35,16 +37,16 @@ func CreateOrderbook(stock string) *ORDERBOOK {
 		StockSymbol: stock,
 		CurrYesPrice: 0,
 		CurrNoPrice: 0,
-		Buy: buyOrderbook{
-			Type: map[orderType]strikePrice{},
+		Buy: BuyOrderbook{
+			Type: map[OrderType]StrikePrice{},
 		},
-		Sell: sellOrderbook{
-			Type: map[orderType]strikePrice{
+		Sell: SellOrderbook{
+			Type: map[OrderType]StrikePrice{
 				Yes : {
-					Strike: map[int]orders{},
+					Strike: map[int]Orders{},
 				},
 				No : {
-					Strike: map[int]orders{},
+					Strike: map[int]Orders{},
 				},
 			},
 		},
@@ -53,12 +55,13 @@ func CreateOrderbook(stock string) *ORDERBOOK {
 }
 
 func (ob *ORDERBOOK)PlaceSellOrder(userId,stockType string, quantity,price int){
-	var st orderType
+	var st OrderType
 	if stockType == "yes" {
 		st = Yes
 	}else if stockType == "no" {
 		st = No
 	}
+    // strike := ob.Sell.Type[st].Strike[price]
     strike := ob.Sell.Type[st].Strike[price]
 	strike.TotalOrders += quantity
 	if strike.Order == nil {
@@ -68,4 +71,3 @@ func (ob *ORDERBOOK)PlaceSellOrder(userId,stockType string, quantity,price int){
 	ob.Sell.Type[st].Strike[price] = strike
 	fmt.Println(ob.Sell)
 }
-func (ob *ORDERBOOK)PlaceBuyOrder(){}

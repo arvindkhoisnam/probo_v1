@@ -3,34 +3,37 @@ package packages
 import (
 	"fmt"
 	"sync"
+
+	"github.com/arvindkhoisnam/go_probo_engine/models"
+	"github.com/arvindkhoisnam/go_probo_engine/redisManager"
 )
 
-type userBalance struct {
+type UserBalance struct {
 	Balance int
 	Locked  int
 }
 type INR_BALANCE struct {
-	User  map[string]userBalance
+	User  map[string]UserBalance
 }
 
-type quantity struct {
+type Quantity struct {
 	Available int
 	Locked int
 }
-type StockType int
+type StockEnum int
 const (
-	YesStock StockType = iota 
+	YesStock StockEnum = iota 
 	NoStock
 )
-type stockType struct {
-	Type map[StockType] quantity
+type StockType struct {
+	Type map[StockEnum] Quantity
 }
-type stockSymbol struct {
-	Symbol map[string] stockType
+type StockSymbol struct {
+	Symbol map[string] StockType
 }
 
 type STOCK_BALANCE struct {
-	User map[string] stockSymbol
+	User map[string] StockSymbol
 }
 
 type Engine struct {
@@ -54,21 +57,22 @@ type Data struct {
 	Amount    int    `json:"amount,omitempty"`
 }
 type Incoming struct {
-	Event   string `json:"event"`
-	Payload Data
+	Event   	 string `json:"event"`
+	RedisChannel string `json:"redisChannel"`
+	Payload 	 Data
 }
 
 
 func InitEngine() *Engine {
 	once.Do(func ()  {
 		engineInstance = &Engine{
-			Markets: make([]ORDERBOOK, 0),
-			InrBalance: INR_BALANCE{
-				User: make(map[string]userBalance),
-			},
-			StockBalance: STOCK_BALANCE{
-				User: make(map[string]stockSymbol),
-			},
+				Markets: make([]ORDERBOOK, 0),
+				InrBalance: INR_BALANCE{
+					User: make(map[string]UserBalance),
+				},
+				StockBalance: STOCK_BALANCE{
+					User: make(map[string]StockSymbol),
+				},
 		}
 	})
 	return engineInstance
@@ -77,126 +81,292 @@ func InitEngine() *Engine {
 func (e *Engine)StartEngine(incoming Incoming){
 	switch incoming.Event {
 	case "createMarket" :
-		e.CreateMarket(incoming.Payload.Stock)
+		e.CreateMarket(incoming.Payload.Stock,incoming.RedisChannel)
 	case "createUser" :
-		e.CreateUser(incoming.Payload.UserId)
+		e.CreateUser(incoming.Payload.UserId,incoming.RedisChannel)
 	case "onramp" :
-		e.OnrampINR(incoming.Payload.UserId,incoming.Payload.Amount)
+		e.OnrampINR(incoming.Payload.UserId,incoming.RedisChannel,incoming.Payload.Amount)
 	case "getInrBal" :
-		e.GetInrBal(incoming.Payload.UserId)
+		e.GetInrBal(incoming.Payload.UserId,incoming.RedisChannel)
 	case "getStockBal" :
-		e.GetStockBal(incoming.Payload.UserId)
+		e.GetStockBal(incoming.Payload.UserId,incoming.RedisChannel)
 	case "allMarkets" :
-		e.AllMarkets()
+		e.AllMarkets(incoming.RedisChannel)
 	case "mint" :
-		e.Mint(incoming.Payload.UserId,incoming.Payload.Stock,incoming.Payload.Quantity,incoming.Payload.Price)
+		e.Mint(incoming.Payload.UserId,incoming.Payload.Stock,incoming.RedisChannel,incoming.Payload.Quantity,incoming.Payload.Price)
 	case "placeOrder":
 		e.PlaceOrder(incoming.Payload.UserId,incoming.Payload.Stock,incoming.Payload.StockType,incoming.Payload.OrderType,incoming.Payload.Quantity,incoming.Payload.Price)
 	}
 
 }
 
-func (e *Engine)CreateMarket(stock string){
+func (e *Engine)CreateMarket(stock,redisChan string){
 	if _,exists := e.checkMarket(stock);exists{
-		fmt.Println("ALREADY EXISTS")
-			return
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 400,
+			Message:  fmt.Sprintf("%s market already exists.",stock),
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
+		return
 	}
 	orderbook := CreateOrderbook(stock)
+	
 	e.Markets = append(e.Markets, *orderbook)
-	fmt.Println(e.Markets)
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Message:  fmt.Sprintf("%s market successfully created.",stock),
+	}
+	redisManager.PubToRedis(redisChan,outgoing)
 }
 
-func (e *Engine)CreateUser(userId string){
+func (e *Engine)CreateUser(userId, redisChan string){
 	if exists := e.checkUser(userId);exists{
-		fmt.Println("User already created.")
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 400,
+			Message:  fmt.Sprintf("%s already exists.",userId),
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
+		return
 	}
-		 e.InrBalance.User[userId] = userBalance{
+		 e.InrBalance.User[userId] = UserBalance{
 			Balance: 0,
 			Locked: 0,
 		 }
-		 e.StockBalance.User[userId] = stockSymbol{}
-		 fmt.Println(e.InrBalance)
-		fmt.Println(e.StockBalance) 
-	
+		 e.StockBalance.User[userId] = StockSymbol{}
+		 outgoing := &redisManager.Outgoing{
+			StatusCode: 200,
+			Message:  fmt.Sprintf("%s successfully created.",userId),
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
 }
 
-func (e *Engine)OnrampINR(userId string, amount int){
+func (e *Engine)OnrampINR(userId,redisChan string, amount int){
 	if exists := e.checkUser(userId); !exists{
-		fmt.Println("No user found. Please create user.")
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 400,
+			Message:  "No user found. Please create user.",
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
 		return
 	}
 	user := e.InrBalance.User[userId]
 	user.Balance += amount
 	e.InrBalance.User[userId] = user
-	fmt.Println(user)
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Message:  fmt.Sprintf("Onramped %d to %s successfully .",amount,userId),
+	}
+	redisManager.PubToRedis(redisChan,outgoing)
 }
 
-func (e *Engine)GetInrBal(userId string) {
+func (e *Engine)GetInrBal(userId,redisChan string) {
 	if exists := e.checkUser(userId);!exists{
-		fmt.Println("User does not exist")
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 400,
+			Message:  "No user found. Please create user.",
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
+		return
 	}
-
 	userBal := e.InrBalance.User[userId]
-	fmt.Println(userBal)
+	// temp := models.UserBalance{
+	// 	Balance: userBal.Balance,
+	// 	Locked: userBal.Locked,
+	// }
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Payload: redisManager.Data{
+			INRBalance: models.UserBalance(userBal),
+		},
+	}
+	redisManager.PubToRedis(redisChan, outgoing)
 }
 
-func (e *Engine)GetStockBal(userId string) {
+func (e *Engine)GetStockBal(userId,redisChan string) {
 	if exists := e.checkUser(userId);!exists{
-		fmt.Println("User does not exist")
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 400,
+			Message:  "No user found. Please create user.",
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
+		return
+	}
+	userStocks := e.StockBalance.User[userId]
+
+	// Convert StockType map to models.StockType map
+	convertedSymbol := make(map[string]models.StockType)
+	for stockKey, stockVal := range userStocks.Symbol {
+		convertedType := make(map[models.StockEnum]models.Quantity)
+
+		// Convert StockEnum & Quantity
+		for enumKey, qtyVal := range stockVal.Type {
+			convertedType[models.StockEnum(enumKey)] = models.Quantity{
+				Available: qtyVal.Available,
+				Locked:    qtyVal.Locked,
+			}
+		}
+
+		convertedSymbol[stockKey] = models.StockType{
+			Type: convertedType,
+		}
 	}
 
-	userStocks := e.StockBalance.User[userId]
-	fmt.Println(userStocks)
+	// Correctly populate temp with the converted data
+	temp := models.StockSymbol{
+		Symbol: convertedSymbol,
+	}
+
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Payload: redisManager.Data{
+			StockBalance:  temp,
+		},
+	}
+	redisManager.PubToRedis(redisChan, outgoing)
 }
-type market struct{
-	stockSymbol string
-	currYesPrice int
-	currNoPrice int
-}
-func (e *Engine)AllMarkets()[]market{
-	var allMarkets []market
+
+func (e *Engine)AllMarkets(redisChan string){
+	var allMarkets []models.Market
 	for _, val := range e.Markets{
-		m := market{
-			stockSymbol: val.StockSymbol,
-			currYesPrice: val.CurrYesPrice,
-			currNoPrice: val.CurrNoPrice,
+		m := models.Market{
+			StockSymbol: val.StockSymbol,
+			CurrYesPrice: val.CurrYesPrice,
+			CurrNoPrice: val.CurrNoPrice,
 		}
 		allMarkets = append(allMarkets,m)
 	}
-	return allMarkets
+		outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Payload: redisManager.Data{
+			Markets: allMarkets,
+		},
+	}
+	redisManager.PubToRedis(redisChan, outgoing)
 }
 
-func (e *Engine)Mint(userId, stock string, qty,price int){
-	if _,exists := e.checkMarket(stock); !exists{
-		fmt.Printf("Markets does not exist for %s stock.\n",stock)
+// func (e *Engine)Mint(userId, stock, redisChan string, qty,price int){
+// 	if _,exists := e.checkMarket(stock); !exists{
+// 		fmt.Printf("Markets does not exist for %s stock.\n",stock)
+// 		return
+// 	}
+
+// 	if exists := e.checkUser(userId); !exists{
+// 		fmt.Println("No user found. Please create user.")
+// 		return
+// 	}
+
+// 	if sufficient := e.checkInrBal(userId,qty*price); !sufficient {
+// 		fmt.Println("Insufficient balance")
+// 		return
+// 	}
+
+// 	userStocks := e.StockBalance.User[userId]
+
+// 	stocks,exists := userStocks.Symbol[stock]
+// 	if exists {
+// 		stocks.Type[YesStock] = Quantity{
+// 			Available: stocks.Type[YesStock].Available + qty,
+// 			Locked:    stocks.Type[YesStock].Locked,
+// 		}
+
+// 		stocks.Type[NoStock] = Quantity{
+// 			Available: stocks.Type[NoStock].Available + qty,
+// 			Locked:    stocks.Type[NoStock].Locked,
+// 		}
+
+// 		// Assign updated stock back to user's stock balance
+// 		userStocks.Symbol[stock] = stocks
+// 		e.StockBalance.User[userId] = userStocks
+// 	}
+// 	userStocks.Symbol = map[string]StockType{
+// 		stock: {
+// 			Type: map[StockEnum]Quantity{
+// 				YesStock: {Available: qty, Locked: 0},
+// 				NoStock:  {Available: qty, Locked: 0},
+// 			},
+// 		},
+// 	}
+// 	e.StockBalance.User[userId] = userStocks
+
+// 	userBal := e.InrBalance.User[userId]
+// 	userBal.Balance -= qty*price
+// 	e.InrBalance.User[userId] = userBal
+
+// 	outgoing := &redisManager.Outgoing{
+// 		StatusCode: 200,
+// 		Message: fmt.Sprintf("%d yes and no stocks of %s have been minted to %s.",qty,stock,userId),
+// 	}
+// 	redisManager.PubToRedis(redisChan, outgoing)
+// }
+
+func (e *Engine) Mint(userId, stock, redisChan string, qty, price int) {
+	if _, exists := e.checkMarket(stock); !exists {
+		fmt.Printf("Markets do not exist for %s stock.\n", stock)
 		return
 	}
 
-	if exists := e.checkUser(userId); !exists{
-		fmt.Println("No user found. Please create user.")
+	if exists := e.checkUser(userId); !exists {
+		fmt.Println("No user found. Please create a user.")
 		return
 	}
 
-	if sufficient := e.checkInrBal(userId,qty*price); !sufficient {
+	if sufficient := e.checkInrBal(userId, qty*price); !sufficient {
 		fmt.Println("Insufficient balance")
 		return
 	}
 
-	userStocks := e.StockBalance.User[userId]
-	userStocks.Symbol = map[string]stockType{
-		stock: {
-			Type: map[StockType]quantity{
+	// Fetch user stocks
+	userStocks, userExists := e.StockBalance.User[userId]
+	if !userExists {
+		// Initialize user stock balance if it does not exist
+		userStocks = StockSymbol{Symbol: make(map[string]StockType)}
+	}
+
+	// Check if stock exists, if not initialize it
+	stocks, stockExists := userStocks.Symbol[stock]
+	if stockExists {
+		// Update existing stock quantities
+		stocks.Type[YesStock] = Quantity{
+			Available: stocks.Type[YesStock].Available + qty,
+			Locked:    stocks.Type[YesStock].Locked,
+		}
+
+		stocks.Type[NoStock] = Quantity{
+			Available: stocks.Type[NoStock].Available + qty,
+			Locked:    stocks.Type[NoStock].Locked,
+		}
+	} else {
+		// Initialize new stock entry
+		stocks = StockType{
+			Type: map[StockEnum]Quantity{
 				YesStock: {Available: qty, Locked: 0},
 				NoStock:  {Available: qty, Locked: 0},
 			},
-		},
+		}
 	}
+
+	// Ensure userStocks.Symbol is initialized
+	if userStocks.Symbol == nil {
+		userStocks.Symbol = make(map[string]StockType)
+	}
+
+	// Assign updated/new stock back to user's stock balance
+	userStocks.Symbol[stock] = stocks
 	e.StockBalance.User[userId] = userStocks
 
+	// Deduct balance
 	userBal := e.InrBalance.User[userId]
-	userBal.Balance -= qty*price
+	userBal.Balance -= qty * price
 	e.InrBalance.User[userId] = userBal
+
+	// Send success response
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Message:    fmt.Sprintf("%d yes and no stocks of %s have been minted to %s.", qty, stock, userId),
+	}
+	redisManager.PubToRedis(redisChan, outgoing)
 }
+
 
 
 func (e *Engine)PlaceOrder(userId,stock,stockType,orderType string, quantity,price int){
@@ -222,7 +392,7 @@ func (e *Engine) checkUser(userId string)  bool {
 	return exists
 }
 
-func (e *Engine)checkMarket(stock string)(*ORDERBOOK,bool){
+func (e *Engine)checkMarket(stock string)(*ORDERBOOK, bool){
 	for _, val := range e.Markets {
 		if val.StockSymbol == stock{
 			return &val,true
@@ -240,7 +410,7 @@ func (e *Engine)checkInrBal(userId string, request int)bool{
 }
 
 func (e *Engine)checkAndLockStock(userId,stock,stockType string, quantity int ) bool {
-	var st StockType
+	var st StockEnum
 	if stockType == "yes" {
 		st = YesStock
 	}else if stockType == "no" {
