@@ -21,7 +21,8 @@ type Data struct {
 	Markets    []models.Market `json:"markets"`
 	INRBalance models.UserBalance
 	StockBalance models.StockSymbol
-
+	SellOBYes models.StrikePrice
+	SellOBNo models.StrikePrice
 }
 
 type Outgoing struct {

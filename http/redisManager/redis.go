@@ -66,7 +66,19 @@ type StockType struct {
 type StockSymbol struct {
 	Symbol map[string] StockType
 }
+type OrderType int
+const (
+	Yes OrderType = iota
+	No
+)
+type Orders struct {
+	TotalOrders int
+	Order map[string] int
+}
 
+type StrikePrice struct {
+	Strike map[int] Orders
+}
 type Data2 struct {
 	UserId string `json:"userId,omitempty"`
 	BalanceInr int	  `json:"balanceInr,omitempty"`
@@ -74,6 +86,9 @@ type Data2 struct {
 	Markets []Market
 	INRBalance UserBalance
 	StockBalance StockSymbol
+	SellOBYes StrikePrice
+	SellOBNo StrikePrice
+
 }
 type Outgoing struct {
 	StatusCode int

@@ -21,7 +21,10 @@ func routes(app *gin.Engine){
 		api.POST("/trade/mint",routeHandlers.Mint)
 		api.GET("/balances/inr/:userId",routeHandlers.GetInrBal)
 		api.GET("/balances/stock/:userId",routeHandlers.GetStockBal)
-		api.GET("allmarkets",routeHandlers.AllMarkets)
+		api.GET("/allmarkets",routeHandlers.AllMarkets)
+		api.POST("/order/sell",routeHandlers.SellOrder)
+		api.POST("/order/buy",routeHandlers.BuyOrder)
+		api.GET("/orderbook/sell/:stock",routeHandlers.GetSellOB)
 	}
 }
 

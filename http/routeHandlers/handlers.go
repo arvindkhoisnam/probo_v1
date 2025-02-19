@@ -1,8 +1,6 @@
 package routeHandlers
 
 import (
-	"fmt"
-
 	"github.com/arvindkhoisnam/go_probo_http/redisManager"
 	"github.com/gin-gonic/gin"
 )
@@ -67,13 +65,7 @@ func GetInrBal(c *gin.Context){
 	}
 
 	outgoing := redisManager.PushToRedisAwait(data)
-	fmt.Println(outgoing)
-	temp := &redisManager.Outgoing{
-		Payload: redisManager.Data2{
-			INRBalance: outgoing.Payload.INRBalance,
-		},
-	}
-	c.JSON(outgoing.StatusCode,gin.H{"data": temp})
+	c.JSON(outgoing.StatusCode,gin.H{"data": outgoing.Payload.INRBalance})
 }
 
 func Mint(c *gin.Context){
@@ -123,4 +115,73 @@ func AllMarkets(c *gin.Context){
 	}
 	outgoing := redisManager.PushToRedisAwait(data)
 	c.JSON(outgoing.StatusCode,gin.H{"data":outgoing.Payload.Markets})
+}
+
+func SellOrder(c *gin.Context){
+	type reqBody struct {
+		UserId 	 string `json:"userId"`
+		Stock    string `json:"stock"`
+		Type	 string `json:"type"`
+		Quantity int  	`json:"quantity"`
+		Price 	 int 	`json:"price"`
+	}
+
+	body := &reqBody{}
+	if err := c.ShouldBindJSON(body); err != nil {
+		c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+		}
+	data := &redisManager.Incoming{
+		Event: "placeOrder",
+		Payload: redisManager.Data{
+			UserId: body.UserId,
+			Stock: body.Stock,
+			StockType: body.Type,
+			OrderType: "sell",
+			Quantity: body.Quantity,
+			Price: body.Price,
+		},
+	}
+	outgoing :=  redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"data":outgoing.Message})
+}
+
+func BuyOrder(c *gin.Context){
+	type reqBody struct {
+		UserId 	 string `json:"userId"`
+		Stock    string `json:"stock"`
+		Type	 string `json:"type"`
+		Quantity int  	`json:"quantity"`
+		Price 	 int 	`json:"price"`
+	}
+	body := &reqBody{}
+	if err := c.ShouldBindJSON(body); err != nil {
+		c.JSON(400, gin.H{"error": "Invalid request", "details": err.Error()})
+		return
+		}
+	data := &redisManager.Incoming{
+		Event: "placeOrder",
+		Payload: redisManager.Data{
+			UserId: body.UserId,
+			Stock: body.Stock,
+			StockType: body.Type,
+			OrderType: "buy",
+			Quantity: body.Quantity,
+			Price: body.Price,
+		},
+	}
+	outgoing :=  redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"data":outgoing.Message})
+}
+
+func GetSellOB(c *gin.Context){
+	stock := c.Param("stock")
+	data := &redisManager.Incoming{
+		Event: "sellOrderbook",
+		Payload: redisManager.Data{
+			Stock: stock,
+		},
+	}
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"yes": outgoing.Payload.SellOBYes,"no":outgoing.Payload.SellOBNo})
 }
