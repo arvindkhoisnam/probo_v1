@@ -363,17 +363,36 @@ func (e *Engine)GetSellOB(stock,redisChan string)  {
 	}
 
 	yesOB := models.StrikePrice{
-		Strike: make(map[int]models.Orders),
+		Strike: map[int]models.Orders{},
 	}
 	noOB := models.StrikePrice{
 		Strike: make(map[int]models.Orders),
 	}
 
 	for strike,order := range market.Sell.Type[Yes].Strike{
-		yesOB.Strike[strike] = models.Orders(order)
+		yesOB.Strike[strike] = models.Orders{
+			TotalOrders: order.TotalOrders,
+			TimeStamp: map[int]models.User{},
+		}
+		for time, val := range order.TimeStamp {
+			yesOB.Strike[strike].TimeStamp[time] = models.User{
+				UserId: val.UserId,
+				Quantity: val.Quantity,
+			}
+		}
 	}
 	for strike,order := range market.Sell.Type[No].Strike{
-		noOB.Strike[strike] = models.Orders(order)
+		noOB.Strike[strike] = models.Orders{
+			TotalOrders: order.TotalOrders,
+			TimeStamp: map[int]models.User{},
+		}
+
+		for time,val := range order.TimeStamp{
+			noOB.Strike[strike].TimeStamp[time] = models.User{
+				UserId: val.UserId,
+				Quantity: val.Quantity,
+			}
+		}
 	}
 	outgoing := &redisManager.Outgoing{
 		StatusCode: 200,

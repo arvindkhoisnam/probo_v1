@@ -71,9 +71,21 @@ const (
 	Yes OrderType = iota
 	No
 )
+// type Orders struct {
+// 	TotalOrders int
+// 	Order map[string] int
+// }
+
+// type StrikePrice struct {
+// 	Strike map[int] Orders
+// }
+type User struct {
+	UserId string
+	Quantity int
+}
 type Orders struct {
 	TotalOrders int
-	Order map[string] int
+	TimeStamp map[int] User
 }
 
 type StrikePrice struct {
