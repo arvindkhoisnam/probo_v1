@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sort"
 
+	"golang.org/x/exp/maps"
+
 	"math"
 	"time"
-
-	"golang.org/x/exp/maps"
 )
 
 type StockTypeEnum int
@@ -128,55 +128,6 @@ func (ob *ORDERBOOK)PlaceBuyOrder(userId,stockType string, quantity,price int, e
 	}
 
 	ob.matchOrder(userId,price,quantity,st,mst,e)
-	// sellOB := ob.Sell.Type[st].Strike[price]	
-	// sellOB.TotalOrders -= quantity
-	// sellOB.Order["user1"] -= quantity
-	
-	// buyer, buyerStocks := e.StockBalance.User[userId]
-	// seller, sellerStocks := e.StockBalance.User["user1"]
-
-	// if sellerStocks {
-	// 	stocks := seller.Symbol[ob.StockSymbol].Type[mst]
-	// 	stocks.Locked -= quantity
-	// 	e.StockBalance.User["user1"].Symbol[ob.StockSymbol].Type[mst] = stocks
-	// }
-	// if !buyerStocks {
-	// 	buyer = StockSymbol{
-	// 		Symbol: map[string]StockType{},
-	// 	}
-	// }
-	// stocks, stockExists := buyer.Symbol[ob.StockSymbol]
-	// if !stockExists {
-	// 	stocks = StockType{
-	// 		Type: map[StockEnum]Quantity{
-	// 			mst :{
-	// 				Available: quantity,
-	// 				Locked: 0,
-	// 			},
-	// 		},
-	// 	}
-	// } else {
-	// 	stocks.Type[mst] = Quantity{
-	// 		Available:  stocks.Type[mst].Available + quantity,
-	// 		Locked:  stocks.Type[mst].Locked,
-	// 	}
-	// }
-
-	// if buyer.Symbol == nil {
-	// 	buyer.Symbol = make(map[string]StockType)
-	// }
-
-	// buyer.Symbol[ob.StockSymbol] = stocks
-	// e.StockBalance.User[userId] = buyer
-
-	// buyerINR := e.InrBalance.User[userId]
-	// sellerINR := e.InrBalance.User["user1"]
-
-	// buyerINR.Locked -= quantity*price
-	// sellerINR.Balance += quantity*price
-
-	// e.InrBalance.User[userId] = buyerINR
-	// e.InrBalance.User["user1"] = sellerINR
 }
 
 func (ob *ORDERBOOK)matchOrder(userId string ,price,qty int, st StockTypeEnum,mst StockEnum,e *Engine){
@@ -184,18 +135,19 @@ func (ob *ORDERBOOK)matchOrder(userId string ,price,qty int, st StockTypeEnum,ms
 	pendingOrders := qty
 	fillable := ob.CalcFillableBuyQty(price,qty,st)
 	strikes := ob.Sell.Type[st]
+	sortedStrikeKeys := maps.Keys(strikes.Strike)
+	sort.Ints(sortedStrikeKeys)
 	fmt.Println("fillable",fillable)
-	for strike,order := range strikes.Strike {
+	for _,currStrike := range sortedStrikeKeys{
+		order := strikes.Strike[currStrike]
 		if  filledQty < fillable{
 			filled := math.Min(float64(pendingOrders),float64(order.TotalOrders))
 			order.TotalOrders -= int(filled)
 			timestamps := &order.TimeStamp
-			ob.manageStocks(userId,int(filled),mst,e,timestamps)
+			ob.manageStocksAndInr(userId,int(filled),currStrike,mst,e,timestamps)
 			pendingOrders -= int(filled)
 			filledQty += int(filled)
-			// ob.manageINR(userId,"user1",int(filled),strike,e)
-			fmt.Println("curr stirke",strike)
-			ob.Sell.Type[st].Strike[strike] = order
+			ob.Sell.Type[st].Strike[currStrike] = order
 		}
 	}
 	fmt.Println(ob.Sell.Type[st])
@@ -203,18 +155,9 @@ func (ob *ORDERBOOK)matchOrder(userId string ,price,qty int, st StockTypeEnum,ms
 	fmt.Println("filled :",filledQty)
 }
 
-func (ob *ORDERBOOK)manageINR(buyer,seller string, qty,price int, e *Engine){
-	buyerBal := e.InrBalance.User[buyer]
-	sellerBal := e.InrBalance.User[seller]
 
-	buyerBal.Locked -= qty * price
-	sellerBal.Balance += qty * price
 
-	e.InrBalance.User[buyer] = buyerBal
-	e.InrBalance.User[seller] = sellerBal
-}
-
-func(ob *ORDERBOOK)manageStocks(buyer string, toFill int,mst StockEnum, e *Engine, ts *map[int]User){
+func(ob *ORDERBOOK)manageStocksAndInr(buyer string, toFill,strike int,mst StockEnum, e *Engine, ts *map[int]User){
 	sortedTimestamps := maps.Keys(*ts)
 	sort.Ints(sortedTimestamps)
 	tempToFill := toFill
@@ -227,29 +170,45 @@ func(ob *ORDERBOOK)manageStocks(buyer string, toFill int,mst StockEnum, e *Engin
 			tempToFill -= int(toDeduct)
 
 
+			(*ts)[time] = orders
+			
 			sellerStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst]
 			sellerStocks.Locked -= int(toDeduct)
+			e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst] = sellerStocks
 
-			buyerStocks,notInit := e.StockBalance.User[buyer]
-			if !notInit {
-				e.StockBalance.User[buyer] = StockSymbol{
-					Symbol: map[string]StockType{},
+			_,existing := e.StockBalance.User[buyer].Symbol[ob.StockSymbol]
+			if !existing {
+				e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = StockType{
+					Type: map[StockEnum]Quantity{
+						YesStock: {
+							Available: 0,
+							Locked: 0,
+						},
+						NoStock :{
+							Available: 0,
+							Locked: 0,
+						},
+					},
 				}
 			}
-
-			stockType,existingType := buyerStocks.Symbol[ob.StockSymbol].Type[mst]
-			if !existingType{
-				stockType = Quantity{
-					Available: 0,
-				}	
-			}	
-			stockType.Available += int(toDeduct)
-
-			e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst] = sellerStocks
-			e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst]= stockType
+			buyerStocks := e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst]
+			buyerStocks.Available += int(toDeduct)
+			e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst] = buyerStocks
+			ob.manageINR(buyer,seller,int(toDeduct),strike,e)
 		}
 	}
+} 
+func (ob *ORDERBOOK)manageINR(buyer,seller string, qty,price int, e *Engine){
+	buyerBal := e.InrBalance.User[buyer]
+	sellerBal := e.InrBalance.User[seller]
+
+	buyerBal.Locked -= qty * price
+	sellerBal.Balance += qty * price
+
+	e.InrBalance.User[buyer] = buyerBal
+	e.InrBalance.User[seller] = sellerBal
 }
+
 func (ob *ORDERBOOK)CalcFillableBuyQty( price,qty int, st StockTypeEnum) int {
 	strikes := ob.Sell.Type[st]
 	var temp int

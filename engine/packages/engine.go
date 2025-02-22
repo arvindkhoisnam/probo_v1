@@ -134,7 +134,11 @@ func (e *Engine)CreateUser(userId, redisChan string){
 			Balance: 0,
 			Locked: 0,
 		 }
-		 e.StockBalance.User[userId] = StockSymbol{}
+		 e.StockBalance.User[userId] = StockSymbol{
+			Symbol: map[string]StockType{
+				
+			},
+		 }
 		 outgoing := &redisManager.Outgoing{
 			StatusCode: 200,
 			Message:  fmt.Sprintf("%s successfully created.",userId),
