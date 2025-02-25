@@ -171,7 +171,7 @@ func BuyOrder(c *gin.Context){
 		},
 	}
 	outgoing :=  redisManager.PushToRedisAwait(data)
-	c.JSON(outgoing.StatusCode,gin.H{"data":outgoing.Message})
+	c.JSON(outgoing.StatusCode,gin.H{"message":outgoing.Message,"filled":outgoing.Payload.FilledOrders,"pending":outgoing.Payload.PendingOrders})
 }
 
 func GetSellOB(c *gin.Context){

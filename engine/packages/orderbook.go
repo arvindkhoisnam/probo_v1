@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/arvindkhoisnam/go_probo_engine/redisManager"
 	"golang.org/x/exp/maps"
 
 	"math"
@@ -17,6 +18,7 @@ const (
 )
 
 type User struct {
+	ReverseOrder bool
 	UserId string
 	Quantity int
 }
@@ -65,7 +67,7 @@ func CreateOrderbook(stock string) *ORDERBOOK {
 	return &ob
 }
 
-func (ob *ORDERBOOK)PlaceSellOrder(userId,stockType string, quantity,price int){
+func (ob *ORDERBOOK)PlaceSellOrder(redisChan,userId,stockType string, quantity,price int){
 	var st StockTypeEnum
 	if stockType == "yes" {
 		st = Yes
@@ -93,6 +95,12 @@ func (ob *ORDERBOOK)PlaceSellOrder(userId,stockType string, quantity,price int){
 		}
 
 		ob.Sell.Type[st].Strike[price] = strikePrice
+
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 200,
+			Message: fmt.Sprintf("Order for %d %s stocks of %s placed at %d.",quantity,stockType,ob.StockSymbol,price),
+		}
+		redisManager.PubToRedis(redisChan, outgoing )
 	}
 }
 
@@ -110,7 +118,7 @@ func (ob *ORDERBOOK)CheckSeller(st StockTypeEnum,price,quantity int) bool {
 	return fillable > 0
 }
 
-func (ob *ORDERBOOK)PlaceBuyOrder(userId,stockType string, quantity,price int, e *Engine){
+func (ob *ORDERBOOK)PlaceBuyOrder(redisChan,userId,stockType string, quantity,price int, e *Engine){
 	var st StockTypeEnum
 	var mst StockEnum
 	if stockType == "yes" {
@@ -124,15 +132,22 @@ func (ob *ORDERBOOK)PlaceBuyOrder(userId,stockType string, quantity,price int, e
 	isAvailable := ob.CheckSeller(st,price,quantity)
 	if !isAvailable {
 		fmt.Println("No orders can be matched at the moment.")
+		ob.ReverseOrder(redisChan,userId,price,quantity,st)
+		outgoing := &redisManager.Outgoing{
+			StatusCode: 200,
+			Message: fmt.Sprintf("Reverse order for %d %s stocks of %s placed at %d.",quantity,stockType,ob.StockSymbol,price),
+		}
+		redisManager.PubToRedis(redisChan, outgoing )
 		return
 	}
 
-	ob.matchOrder(userId,price,quantity,st,mst,e)
+	ob.matchOrder(redisChan,userId,price,quantity,st,mst,e)
 }
 
-func (ob *ORDERBOOK)matchOrder(userId string ,price,qty int, st StockTypeEnum,mst StockEnum,e *Engine){
+func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st StockTypeEnum,mst StockEnum,e *Engine){
 	var filledQty int
-	pendingOrders := qty
+	// var LTP int
+	pendingQty := qty
 	fillable := ob.CalcFillableBuyQty(price,qty,st)
 	strikes := ob.Sell.Type[st]
 	sortedStrikeKeys := maps.Keys(strikes.Strike)
@@ -141,18 +156,28 @@ func (ob *ORDERBOOK)matchOrder(userId string ,price,qty int, st StockTypeEnum,ms
 	for _,currStrike := range sortedStrikeKeys{
 		order := strikes.Strike[currStrike]
 		if  filledQty < fillable{
-			filled := math.Min(float64(pendingOrders),float64(order.TotalOrders))
+			filled := math.Min(float64(pendingQty),float64(order.TotalOrders))
 			order.TotalOrders -= int(filled)
 			timestamps := &order.TimeStamp
 			ob.manageStocksAndInr(userId,int(filled),currStrike,mst,e,timestamps)
-			pendingOrders -= int(filled)
+			pendingQty -= int(filled)
 			filledQty += int(filled)
+			// LTP = currStrike
 			ob.Sell.Type[st].Strike[currStrike] = order
+			if order.TotalOrders == 0 {
+				delete(ob.Sell.Type[st].Strike,currStrike)
+			}
 		}
 	}
-	fmt.Println(ob.Sell.Type[st])
-	fmt.Println("pending :",pendingOrders)
-	fmt.Println("filled :",filledQty)
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Message: "Order placed successfully.",
+		Payload: redisManager.Data{
+			FilledOrders: filledQty,
+			PendingOrders: pendingQty,
+		},
+	}
+	redisManager.PubToRedis(redisChan, outgoing )
 }
 
 
@@ -169,9 +194,10 @@ func(ob *ORDERBOOK)manageStocksAndInr(buyer string, toFill,strike int,mst StockE
 			orders.Quantity -= int(toDeduct)
 			tempToFill -= int(toDeduct)
 
-
 			(*ts)[time] = orders
-			
+			if orders.Quantity == 0 {
+				delete(*ts,time)
+			}	
 			sellerStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst]
 			sellerStocks.Locked -= int(toDeduct)
 			e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst] = sellerStocks
@@ -226,3 +252,20 @@ func (ob *ORDERBOOK)CalcFillableBuyQty( price,qty int, st StockTypeEnum) int {
 	return temp
 }
 
+func (ob *ORDERBOOK)ReverseOrder(redisChan,userId string, price,quantity int, st StockTypeEnum){
+	if st == Yes {
+		st = No
+	}else {
+		st = Yes
+	}
+
+	strikePrice := ob.Sell.Type[st].Strike[price]
+	strikePrice.TotalOrders += quantity
+	strikePrice.TimeStamp[int(time.Now().Unix())] = User{
+		UserId: userId,
+		Quantity: quantity,
+		ReverseOrder: true,
+	}
+
+	ob.Sell.Type[st].Strike[price] = strikePrice
+}

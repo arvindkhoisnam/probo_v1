@@ -17,18 +17,20 @@ Once sync.Once
 )
 
 type Data struct {
-	UserId 	   string `json:"userId,omitempty"`
-	Markets    []models.Market `json:"markets"`
-	INRBalance models.UserBalance
-	StockBalance models.StockSymbol
-	SellOBYes models.StrikePrice
-	SellOBNo models.StrikePrice
+	UserId 	      string 			`json:"userId,omitempty"`
+	Markets       []models.Market  `json:"markets"`
+	INRBalance 	  models.UserBalance
+	StockBalance  models.StockSymbol
+	SellOBYes     models.StrikePrice
+	SellOBNo      models.StrikePrice
+	FilledOrders  int
+	PendingOrders int
 }
 
 type Outgoing struct {
 	StatusCode int
-	Message string
-	Payload Data
+	Message    string
+	Payload    Data
 }
 
 func InitRedis() *redis.Client {

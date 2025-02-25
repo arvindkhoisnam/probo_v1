@@ -323,34 +323,36 @@ func (e *Engine) Mint(userId, stock, redisChan string, qty, price int) {
 func (e *Engine)PlaceOrder(userId,stock,stockType,orderType,redisChan string, quantity,price int){
 	 market ,exists := e.checkMarket(stock)
 	if !exists{
-		fmt.Printf("Market does not exist for %s stock.\n",stock)
+			outgoing := &redisManager.Outgoing{
+			StatusCode: 200,
+			Message: fmt.Sprintf("Market does not exist for %s stock.\n",stock),
+		}
+		redisManager.PubToRedis(redisChan, outgoing)
 		return
 	}
 
 	if  orderType == "sell"{
 		sufficientStocks := e.checkAndLockStock(userId,stock,stockType,quantity)
 		if !sufficientStocks {
-			fmt.Println("failed at checkAndLockStock")
+			outgoing := &redisManager.Outgoing{
+				StatusCode: 200,
+				Message: "Insufficient stocks",
+			}
+			redisManager.PubToRedis(redisChan, outgoing)
 			return
 		}
-		market.PlaceSellOrder(userId,stockType,quantity,price)
-		outgoing := &redisManager.Outgoing{
-			StatusCode: 200,
-			Message: "order placed",
-		}
-		redisManager.PubToRedis(redisChan, outgoing )
+		market.PlaceSellOrder(redisChan,userId,stockType,quantity,price)
 	} else {
 		sufficeintBalance := e.checkAndLockInr(userId,quantity,price)
 		if !sufficeintBalance {
-			fmt.Println("failed at checkAndLockInr")
+			outgoing := &redisManager.Outgoing{
+				StatusCode: 200,
+				Message: "Insufficient inr balance.",
+			}
+			redisManager.PubToRedis(redisChan, outgoing)
 			return
 		}
-		market.PlaceBuyOrder(userId,stockType,quantity,price,e)
-		outgoing := &redisManager.Outgoing{
-			StatusCode: 200,
-			Message: "order placed",
-		}
-		redisManager.PubToRedis(redisChan, outgoing )
+		market.PlaceBuyOrder(redisChan,userId,stockType,quantity,price,e)
 	}
 }
 
