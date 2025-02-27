@@ -25,6 +25,7 @@ func routes(app *gin.Engine){
 		api.POST("/order/sell",routeHandlers.SellOrder)
 		api.POST("/order/buy",routeHandlers.BuyOrder)
 		api.GET("/orderbook/sell/:stock",routeHandlers.GetSellOB)
+		api.GET("/depth/:stock",routeHandlers.GetDepth)
 	}
 }
 

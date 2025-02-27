@@ -25,6 +25,7 @@ type Data struct {
 	SellOBNo      models.StrikePrice
 	FilledOrders  int
 	PendingOrders int
+	Depth 		  models.DepthType
 }
 
 type Outgoing struct {
@@ -45,7 +46,6 @@ func InitRedis() *redis.Client {
 }
 
 func PubToRedis(channel string, data *Outgoing){
-	fmt.Println(data)
 	stringified,err := json.Marshal(data)
 	if err != nil {
 		fmt.Println(err)

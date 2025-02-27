@@ -146,13 +146,12 @@ func (ob *ORDERBOOK)PlaceBuyOrder(redisChan,userId,stockType string, quantity,pr
 
 func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st StockTypeEnum,mst StockEnum,e *Engine){
 	var filledQty int
-	// var LTP int
+	var LTP int
 	pendingQty := qty
 	fillable := ob.CalcFillableBuyQty(price,qty,st)
 	strikes := ob.Sell.Type[st]
 	sortedStrikeKeys := maps.Keys(strikes.Strike)
 	sort.Ints(sortedStrikeKeys)
-	fmt.Println("fillable",fillable)
 	for _,currStrike := range sortedStrikeKeys{
 		order := strikes.Strike[currStrike]
 		if  filledQty < fillable{
@@ -162,12 +161,19 @@ func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st Stock
 			ob.manageStocksAndInr(userId,int(filled),currStrike,mst,e,timestamps)
 			pendingQty -= int(filled)
 			filledQty += int(filled)
-			// LTP = currStrike
+			LTP = currStrike
 			ob.Sell.Type[st].Strike[currStrike] = order
 			if order.TotalOrders == 0 {
 				delete(ob.Sell.Type[st].Strike,currStrike)
 			}
 		}
+	}
+	if st == Yes {
+		ob.CurrYesPrice = LTP
+		ob.CurrNoPrice = 10 - LTP
+	}else{
+		ob.CurrNoPrice =  LTP
+		ob.CurrYesPrice = 10 - LTP
 	}
 	outgoing := &redisManager.Outgoing{
 		StatusCode: 200,
@@ -197,30 +203,34 @@ func(ob *ORDERBOOK)manageStocksAndInr(buyer string, toFill,strike int,mst StockE
 			(*ts)[time] = orders
 			if orders.Quantity == 0 {
 				delete(*ts,time)
-			}	
-			sellerStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst]
-			sellerStocks.Locked -= int(toDeduct)
-			e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst] = sellerStocks
-
-			_,existing := e.StockBalance.User[buyer].Symbol[ob.StockSymbol]
-			if !existing {
-				e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = StockType{
-					Type: map[StockEnum]Quantity{
-						YesStock: {
-							Available: 0,
-							Locked: 0,
-						},
-						NoStock :{
-							Available: 0,
-							Locked: 0,
-						},
-					},
-				}
 			}
-			buyerStocks := e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst]
-			buyerStocks.Available += int(toDeduct)
-			e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst] = buyerStocks
-			ob.manageINR(buyer,seller,int(toDeduct),strike,e)
+			if orders.ReverseOrder {
+				ob.fillReverseOrder(seller,buyer,strike,int(toDeduct),mst,e)
+			} else {
+				sellerStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst]
+				sellerStocks.Locked -= int(toDeduct)
+				e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst] = sellerStocks
+				
+				_,existing := e.StockBalance.User[buyer].Symbol[ob.StockSymbol]
+				if !existing {
+					e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = StockType{
+						Type: map[StockEnum]Quantity{
+							YesStock: {
+								Available: 0,
+								Locked: 0,
+							},
+							NoStock :{
+								Available: 0,
+								Locked: 0,
+							},
+						},
+					}
+				}
+				buyerStocks := e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst]
+				buyerStocks.Available += int(toDeduct)
+				e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst] = buyerStocks
+				ob.manageINR(buyer,seller,int(toDeduct),strike,e)
+			}
 		}
 	}
 } 
@@ -259,13 +269,114 @@ func (ob *ORDERBOOK)ReverseOrder(redisChan,userId string, price,quantity int, st
 		st = Yes
 	}
 
-	strikePrice := ob.Sell.Type[st].Strike[price]
+	newStrikePrice := 10 - price
+	if _,typeExists := ob.Sell.Type[st]; !typeExists {
+		ob.Sell.Type[st] = StrikePrice{
+			Strike: map[int]Orders{},
+		}
+	}
+	if _,strikeExists := ob.Sell.Type[st].Strike[newStrikePrice]; !strikeExists{
+		ob.Sell.Type[st].Strike[newStrikePrice] = Orders{
+			TotalOrders: 0,
+			TimeStamp: map[int]User{},
+		}
+	}
+	strikePrice := ob.Sell.Type[st].Strike[newStrikePrice]
 	strikePrice.TotalOrders += quantity
 	strikePrice.TimeStamp[int(time.Now().Unix())] = User{
+		ReverseOrder: true,
 		UserId: userId,
 		Quantity: quantity,
-		ReverseOrder: true,
 	}
 
-	ob.Sell.Type[st].Strike[price] = strikePrice
+	ob.Sell.Type[st].Strike[newStrikePrice] = strikePrice
+}
+
+func (ob *ORDERBOOK)fillReverseOrder(seller,buyer string ,price,qty int, mst StockEnum,e *Engine){
+	// buyer
+	_,existing := e.StockBalance.User[buyer].Symbol[ob.StockSymbol]
+	if !existing {
+		e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = StockType{
+			Type: map[StockEnum]Quantity{
+				YesStock: {
+					Available: 0,
+					Locked: 0,
+				},
+				NoStock :{
+					Available: 0,
+					Locked: 0,
+				},
+			},
+		}
+	}
+	buyerStocks := e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst]
+	buyerStocks.Available += int(qty)
+	e.StockBalance.User[buyer].Symbol[ob.StockSymbol].Type[mst] = buyerStocks
+
+	buyerBal := e.InrBalance.User[buyer]
+	buyerBal.Locked -= qty * price
+	e.InrBalance.User[buyer] = buyerBal
+
+	// seller
+	if mst == YesStock {
+		mst = NoStock
+	}else {
+		mst = YesStock
+	}
+
+	_,existingStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol]
+	if !existingStocks {
+		e.StockBalance.User[seller].Symbol[ob.StockSymbol] = StockType{
+			Type: map[StockEnum]Quantity{
+				YesStock: {
+					Available: 0,
+					Locked: 0,
+				},
+				NoStock :{
+					Available: 0,
+					Locked: 0,
+				},
+			},
+		}
+	}
+	sellerStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst]
+	sellerStocks.Available += int(qty)
+	e.StockBalance.User[seller].Symbol[ob.StockSymbol].Type[mst] = sellerStocks
+
+	sellerBal := e.InrBalance.User[seller]
+	sellerBal.Locked -= qty * (10-price)
+	e.InrBalance.User[seller] = sellerBal
+}
+type tickerType struct {
+	ticker string
+	yesPrice int
+	noPrice int
+}
+func(ob *ORDERBOOK)GetTicker()tickerType{
+	ticker := tickerType {
+		ticker: ob.StockSymbol,
+		yesPrice: ob.CurrNoPrice,
+		noPrice: ob.CurrNoPrice,
+	}
+
+ 	return ticker
+}
+
+type DepthType struct {
+	YesMarket map[int]int
+	NoMarket map[int]int
+}
+func (ob *ORDERBOOK)GetDepth(redisChan string)DepthType{
+	depth := DepthType{
+		YesMarket: map[int]int{},
+		NoMarket: map[int]int{},
+	}
+
+	for strike,orders := range ob.Sell.Type[Yes].Strike{
+		depth.YesMarket[strike] = orders.TotalOrders
+	}
+	for strike,orders := range ob.Sell.Type[No].Strike{
+		depth.NoMarket[strike] = orders.TotalOrders
+	}
+	return depth
 }

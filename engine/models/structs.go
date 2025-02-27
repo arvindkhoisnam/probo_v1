@@ -33,7 +33,10 @@ type Engine struct {
 	InrBalance INR_BALANCE
 	StockBalance STOCK_BALANCE
 }
-
+type DepthType struct {
+	YesMarket map[int]int
+	NoMarket map[int]int
+}
 type OrderType int
 const (
 	Yes OrderType = iota
@@ -44,6 +47,7 @@ const (
 // 	Order map[string] int
 // }
 type User struct {
+	ReverseOrder bool
 	UserId string
 	Quantity int
 }

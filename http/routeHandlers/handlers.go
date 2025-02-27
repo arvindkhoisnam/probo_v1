@@ -185,3 +185,17 @@ func GetSellOB(c *gin.Context){
 	outgoing := redisManager.PushToRedisAwait(data)
 	c.JSON(outgoing.StatusCode,gin.H{"yes": outgoing.Payload.SellOBYes,"no":outgoing.Payload.SellOBNo})
 }
+
+
+func GetDepth(c *gin.Context){
+	stock := c.Param("stock")
+	data := &redisManager.Incoming{
+		Event: "getDepth",
+		Payload: redisManager.Data{
+			Stock: stock,
+		},
+	}
+
+	outgoing := redisManager.PushToRedisAwait(data)
+	c.JSON(outgoing.StatusCode,gin.H{"message":outgoing.Message,"depth":outgoing.Payload.Depth})
+}

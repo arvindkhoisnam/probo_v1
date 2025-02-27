@@ -55,6 +55,11 @@ type Quantity struct {
 	Available int
 	Locked int
 }
+
+type DepthType struct {
+	YesMarket map[int]int
+	NoMarket map[int]int
+}
 type StockEnum int
 const (
 	YesStock StockEnum = iota
@@ -72,6 +77,7 @@ const (
 	No
 )
 type User struct {
+	ReverseOrder bool
 	UserId string
 	Quantity int
 }
@@ -94,6 +100,7 @@ type Data2 struct {
 	SellOBNo StrikePrice
 	FilledOrders  int
 	PendingOrders int
+	Depth DepthType
 
 }
 type Outgoing struct {
@@ -120,7 +127,6 @@ func PushToRedisAwait(data *Incoming) *Outgoing{
 	
 	outgoing := &Outgoing{}
 	json.Unmarshal([]byte(msg.Payload),outgoing)
-	fmt.Println(outgoing)
 	return outgoing
 }
 

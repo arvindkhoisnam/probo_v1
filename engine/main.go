@@ -26,7 +26,6 @@ func main(){
 		}
 		var parsed packages.Incoming
 		json.Unmarshal([]byte(res),&parsed) 
-		// engine.StartEngine(parsed)
 		engine.StartEngine(parsed)
 	}
 }

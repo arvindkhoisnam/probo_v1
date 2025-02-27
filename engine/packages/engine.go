@@ -98,6 +98,8 @@ func (e *Engine)StartEngine(incoming Incoming){
 		e.PlaceOrder(incoming.Payload.UserId,incoming.Payload.Stock,incoming.Payload.StockType,incoming.Payload.OrderType,incoming.RedisChannel,incoming.Payload.Quantity,incoming.Payload.Price)
 	case "sellOrderbook":
 		e.GetSellOB(incoming.Payload.Stock,incoming.RedisChannel)
+	case "getDepth":
+		e.GetDepth(incoming.RedisChannel,incoming.Payload.Stock)	
 	}
 
 }
@@ -384,6 +386,7 @@ func (e *Engine)GetSellOB(stock,redisChan string)  {
 			yesOB.Strike[strike].TimeStamp[time] = models.User{
 				UserId: val.UserId,
 				Quantity: val.Quantity,
+				ReverseOrder: val.ReverseOrder,
 			}
 		}
 	}
@@ -397,6 +400,7 @@ func (e *Engine)GetSellOB(stock,redisChan string)  {
 			noOB.Strike[strike].TimeStamp[time] = models.User{
 				UserId: val.UserId,
 				Quantity: val.Quantity,
+				ReverseOrder: val.ReverseOrder,
 			}
 		}
 	}
@@ -410,6 +414,25 @@ func (e *Engine)GetSellOB(stock,redisChan string)  {
 	redisManager.PubToRedis(redisChan, outgoing )
 }
 
+func (e *Engine)GetDepth(redisChan,stock string){
+	market,exists := e.checkMarket(stock)
+	if !exists {
+		outgoing := &redisManager.Outgoing{
+		StatusCode: 400,
+		Message: fmt.Sprintf("Market does not exist for %s stock.\n",stock),
+		}
+		redisManager.PubToRedis(redisChan,outgoing)
+		return
+	}
+	depth := market.GetDepth(redisChan)
+	outgoing := &redisManager.Outgoing{
+		StatusCode: 200,
+		Payload: redisManager.Data{
+			Depth: models.DepthType(depth),
+		},
+	}
+	redisManager.PubToRedis(redisChan, outgoing )
+}
 // Helper function
 func (e *Engine) checkUser(userId string)  bool {
 	_, exists := e.InrBalance.User[userId]
