@@ -27,25 +27,23 @@ type StockSymbol struct {
 type STOCK_BALANCE struct {
 	User map[string] StockSymbol
 }
-
-type Engine struct {
-	Markets []ORDERBOOK
-	InrBalance INR_BALANCE
-	StockBalance STOCK_BALANCE
+//////////////////////////////////////////
+type TickerType struct {
+	Ticker string
+	YesPrice int
+	NoPrice int
 }
 type DepthType struct {
 	YesMarket map[int]int
 	NoMarket map[int]int
 }
-type OrderType int
+type StockTypeEnum int
+
 const (
-	Yes OrderType = iota
+	Yes StockTypeEnum = iota 
 	No
 )
-// type Orders struct {
-// 	TotalOrders int
-// 	Order map[string] int
-// }
+
 type User struct {
 	ReverseOrder bool
 	UserId string
@@ -61,17 +59,10 @@ type StrikePrice struct {
 }
 
 type BuyOrderbook struct {
-	Type map[OrderType] StrikePrice
+	Type map[StockTypeEnum] StrikePrice
 }
 type SellOrderbook struct {
-	Type map[OrderType] StrikePrice
-}
-type ORDERBOOK struct{
-	StockSymbol  string
-	CurrYesPrice int
-	CurrNoPrice  int
-	Buy          BuyOrderbook
-	Sell         SellOrderbook
+	Type map[StockTypeEnum] StrikePrice
 }
 
 type Market struct{

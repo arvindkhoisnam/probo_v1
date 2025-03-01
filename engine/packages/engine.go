@@ -7,39 +7,10 @@ import (
 	"github.com/arvindkhoisnam/go_probo_engine/models"
 	"github.com/arvindkhoisnam/go_probo_engine/redisManager"
 )
-
-type UserBalance struct {
-	Balance int
-	Locked  int
-}
-type INR_BALANCE struct {
-	User  map[string]UserBalance
-}
-
-type Quantity struct {
-	Available int
-	Locked int
-}
-type StockEnum int
-const (
-	YesStock StockEnum = iota 
-	NoStock
-)
-type StockType struct {
-	Type map[StockEnum] Quantity
-}
-type StockSymbol struct {
-	Symbol map[string] StockType
-}
-
-type STOCK_BALANCE struct {
-	User map[string] StockSymbol
-}
-
 type Engine struct {
 	Markets []ORDERBOOK
-	InrBalance INR_BALANCE
-	StockBalance STOCK_BALANCE
+	InrBalance models.INR_BALANCE
+	StockBalance models.STOCK_BALANCE
 }
 
 var (
@@ -67,11 +38,11 @@ func InitEngine() *Engine {
 	once.Do(func ()  {
 		engineInstance = &Engine{
 				Markets: make([]ORDERBOOK, 0),
-				InrBalance: INR_BALANCE{
-					User: make(map[string]UserBalance),
+				InrBalance: models.INR_BALANCE{
+					User: make(map[string]models.UserBalance),
 				},
-				StockBalance: STOCK_BALANCE{
-					User: make(map[string]StockSymbol),
+				StockBalance: models.STOCK_BALANCE{
+					User: make(map[string]models.StockSymbol),
 				},
 		}
 	})
@@ -132,12 +103,12 @@ func (e *Engine)CreateUser(userId, redisChan string){
 		redisManager.PubToRedis(redisChan,outgoing)
 		return
 	}
-		 e.InrBalance.User[userId] = UserBalance{
+		 e.InrBalance.User[userId] = models.UserBalance{
 			Balance: 0,
 			Locked: 0,
 		 }
-		 e.StockBalance.User[userId] = StockSymbol{
-			Symbol: map[string]StockType{
+		 e.StockBalance.User[userId] = models.StockSymbol{
+			Symbol: map[string]models.StockType{
 				
 			},
 		 }
@@ -272,35 +243,35 @@ func (e *Engine) Mint(userId, stock, redisChan string, qty, price int) {
 	userStocks, userExists := e.StockBalance.User[userId]
 	if !userExists {
 		// Initialize user stock balance if it does not exist
-		userStocks = StockSymbol{Symbol: make(map[string]StockType)}
+		userStocks = models.StockSymbol{Symbol: make(map[string]models.StockType)}
 	}
 
 	// Check if stock exists, if not initialize it
 	stocks, stockExists := userStocks.Symbol[stock]
 	if stockExists {
 		// Update existing stock quantities
-		stocks.Type[YesStock] = Quantity{
-			Available: stocks.Type[YesStock].Available + qty,
-			Locked:    stocks.Type[YesStock].Locked,
+		stocks.Type[models.YesStock] =models.Quantity{
+			Available: stocks.Type[models.YesStock].Available + qty,
+			Locked:    stocks.Type[models.YesStock].Locked,
 		}
 
-		stocks.Type[NoStock] = Quantity{
-			Available: stocks.Type[NoStock].Available + qty,
-			Locked:    stocks.Type[NoStock].Locked,
+		stocks.Type[models.NoStock] = models.Quantity{
+			Available: stocks.Type[models.NoStock].Available + qty,
+			Locked:    stocks.Type[models.NoStock].Locked,
 		}
 	} else {
 		// Initialize new stock entry
-		stocks = StockType{
-			Type: map[StockEnum]Quantity{
-				YesStock: {Available: qty, Locked: 0},
-				NoStock:  {Available: qty, Locked: 0},
+		stocks = models.StockType{
+			Type: map[models.StockEnum]models.Quantity{
+				models.YesStock: {Available: qty, Locked: 0},
+				models.NoStock:  {Available: qty, Locked: 0},
 			},
 		}
 	}
 
 	// Ensure userStocks.Symbol is initialized
 	if userStocks.Symbol == nil {
-		userStocks.Symbol = make(map[string]StockType)
+		userStocks.Symbol = make(map[string]models.StockType)
 	}
 
 	// Assign updated/new stock back to user's stock balance
@@ -377,7 +348,7 @@ func (e *Engine)GetSellOB(stock,redisChan string)  {
 		Strike: make(map[int]models.Orders),
 	}
 
-	for strike,order := range market.Sell.Type[Yes].Strike{
+	for strike,order := range market.Sell.Type[models.Yes].Strike{
 		yesOB.Strike[strike] = models.Orders{
 			TotalOrders: order.TotalOrders,
 			TimeStamp: map[int]models.User{},
@@ -390,7 +361,7 @@ func (e *Engine)GetSellOB(stock,redisChan string)  {
 			}
 		}
 	}
-	for strike,order := range market.Sell.Type[No].Strike{
+	for strike,order := range market.Sell.Type[models.No].Strike{
 		noOB.Strike[strike] = models.Orders{
 			TotalOrders: order.TotalOrders,
 			TimeStamp: map[int]models.User{},
@@ -424,7 +395,7 @@ func (e *Engine)GetDepth(redisChan,stock string){
 		redisManager.PubToRedis(redisChan,outgoing)
 		return
 	}
-	depth := market.GetDepth(redisChan)
+	depth := market.GetDepth()
 	outgoing := &redisManager.Outgoing{
 		StatusCode: 200,
 		Payload: redisManager.Data{
@@ -457,11 +428,11 @@ func (e *Engine)checkInrBal(userId string, request int)bool{
 }
 
 func (e *Engine)checkAndLockStock(userId,stock,stockType string, quantity int ) bool {
-	var st StockEnum
+	var st models.StockEnum
 	if stockType == "yes" {
-		st = YesStock
+		st = models.YesStock
 	}else if stockType == "no" {
-		st = NoStock
+		st = models.NoStock
 	} else {
 		fmt.Println("stock type not available")
 		return false

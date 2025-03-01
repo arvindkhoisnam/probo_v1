@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/arvindkhoisnam/go_probo_engine/models"
 	"github.com/arvindkhoisnam/go_probo_engine/redisManager"
 	"golang.org/x/exp/maps"
 
@@ -11,38 +12,12 @@ import (
 	"time"
 )
 
-type StockTypeEnum int
-const (
-	Yes StockTypeEnum = iota 
-	No
-)
-
-type User struct {
-	ReverseOrder bool
-	UserId string
-	Quantity int
-}
-type Orders struct {
-	TotalOrders int
-	TimeStamp map[int] User
-}
-
-type StrikePrice struct {
-	Strike map[int] Orders
-}
-
-type BuyOrderbook struct {
-	Type map[StockTypeEnum] StrikePrice
-}
-type SellOrderbook struct {
-	Type map[StockTypeEnum] StrikePrice
-}
 type ORDERBOOK struct{
 	StockSymbol  string
 	CurrYesPrice int
 	CurrNoPrice  int
-	Buy          BuyOrderbook
-	Sell         SellOrderbook
+	Buy          models.BuyOrderbook
+	Sell         models.SellOrderbook
 }
 
 func CreateOrderbook(stock string) *ORDERBOOK {
@@ -50,16 +25,16 @@ func CreateOrderbook(stock string) *ORDERBOOK {
 		StockSymbol: stock,
 		CurrYesPrice: 0,
 		CurrNoPrice: 0,
-		Buy: BuyOrderbook{
-			Type: map[StockTypeEnum]StrikePrice{},
+		Buy: models.BuyOrderbook{
+			Type: map[models.StockTypeEnum]models.StrikePrice{},
 		},
-		Sell: SellOrderbook{
-			Type: map[StockTypeEnum]StrikePrice{
-				Yes : {
-					Strike: map[int]Orders{},
+		Sell: models.SellOrderbook{
+			Type: map[models.StockTypeEnum]models.StrikePrice{
+				models.Yes : {
+					Strike: map[int]models.Orders{},
 				},
-				No : {
-					Strike: map[int]Orders{},
+				models.No : {
+					Strike: map[int]models.Orders{},
 				},
 			},
 		},
@@ -68,28 +43,28 @@ func CreateOrderbook(stock string) *ORDERBOOK {
 }
 
 func (ob *ORDERBOOK)PlaceSellOrder(redisChan,userId,stockType string, quantity,price int){
-	var st StockTypeEnum
+	var st models.StockTypeEnum
 	if stockType == "yes" {
-		st = Yes
+		st = models.Yes
 	}else if stockType == "no" {
-		st = No
+		st = models.No
 	}
 	if exists := ob.CheckBuyer(st,price); !exists {
 		if _,typeExists := ob.Sell.Type[st]; !typeExists {
-			ob.Sell.Type[st] = StrikePrice{
-				Strike: map[int]Orders{},
+			ob.Sell.Type[st] = models.StrikePrice{
+				Strike: map[int]models.Orders{},
 			}
 		}
 		if _,strikeExists := ob.Sell.Type[st].Strike[price]; !strikeExists{
-			ob.Sell.Type[st].Strike[price] = Orders{
+			ob.Sell.Type[st].Strike[price] = models.Orders{
 				TotalOrders: 0,
-				TimeStamp: map[int]User{},
+				TimeStamp: map[int]models.User{},
 			}
 		}
 
 		strikePrice := ob.Sell.Type[st].Strike[price]
 		strikePrice.TotalOrders += quantity
-		strikePrice.TimeStamp[int(time.Now().Unix())] = User{
+		strikePrice.TimeStamp[int(time.Now().Unix())] = models.User{
 			UserId: userId,
 			Quantity: quantity,
 		}
@@ -105,11 +80,11 @@ func (ob *ORDERBOOK)PlaceSellOrder(redisChan,userId,stockType string, quantity,p
 }
 
 
-func (ob *ORDERBOOK)CheckBuyer(st StockTypeEnum,price int) bool {
+func (ob *ORDERBOOK)CheckBuyer(st models.StockTypeEnum,price int) bool {
 	_,exists := ob.Buy.Type[st].Strike[price]
 	return exists
 }
-func (ob *ORDERBOOK)CheckSeller(st StockTypeEnum,price,quantity int) bool {
+func (ob *ORDERBOOK)CheckSeller(st models.StockTypeEnum,price,quantity int) bool {
 	_,availabe := ob.Sell.Type[st]
 	if !availabe {
 		return availabe
@@ -119,14 +94,14 @@ func (ob *ORDERBOOK)CheckSeller(st StockTypeEnum,price,quantity int) bool {
 }
 
 func (ob *ORDERBOOK)PlaceBuyOrder(redisChan,userId,stockType string, quantity,price int, e *Engine){
-	var st StockTypeEnum
-	var mst StockEnum
+	var st models.StockTypeEnum
+	var mst models.StockEnum
 	if stockType == "yes" {
-		st = Yes
-		mst = YesStock
+		st = models.Yes
+		mst = models.YesStock
 	}else if stockType == "no" {
-		st = No
-		mst = NoStock
+		st = models.No
+		mst = models.NoStock
 	}
 
 	isAvailable := ob.CheckSeller(st,price,quantity)
@@ -144,9 +119,8 @@ func (ob *ORDERBOOK)PlaceBuyOrder(redisChan,userId,stockType string, quantity,pr
 	ob.matchOrder(redisChan,userId,price,quantity,st,mst,e)
 }
 
-func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st StockTypeEnum,mst StockEnum,e *Engine){
+func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st models.StockTypeEnum,mst models.StockEnum,e *Engine){
 	var filledQty int
-	var LTP int
 	pendingQty := qty
 	fillable := ob.CalcFillableBuyQty(price,qty,st)
 	strikes := ob.Sell.Type[st]
@@ -161,19 +135,13 @@ func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st Stock
 			ob.manageStocksAndInr(userId,int(filled),currStrike,mst,e,timestamps)
 			pendingQty -= int(filled)
 			filledQty += int(filled)
-			LTP = currStrike
 			ob.Sell.Type[st].Strike[currStrike] = order
 			if order.TotalOrders == 0 {
 				delete(ob.Sell.Type[st].Strike,currStrike)
 			}
+			ob.updateLTP(&st,currStrike)
+			ob.pubToWS()
 		}
-	}
-	if st == Yes {
-		ob.CurrYesPrice = LTP
-		ob.CurrNoPrice = 10 - LTP
-	}else{
-		ob.CurrNoPrice =  LTP
-		ob.CurrYesPrice = 10 - LTP
 	}
 	outgoing := &redisManager.Outgoing{
 		StatusCode: 200,
@@ -186,9 +154,27 @@ func (ob *ORDERBOOK)matchOrder(redisChan, userId string ,price,qty int, st Stock
 	redisManager.PubToRedis(redisChan, outgoing )
 }
 
-
-
-func(ob *ORDERBOOK)manageStocksAndInr(buyer string, toFill,strike int,mst StockEnum, e *Engine, ts *map[int]User){
+func (ob *ORDERBOOK)updateLTP(st *models.StockTypeEnum,LTP int){
+	if *st == models.Yes {
+		ob.CurrYesPrice = LTP
+		ob.CurrNoPrice = 10 - LTP
+		}else{
+			ob.CurrNoPrice =  LTP
+			ob.CurrYesPrice = 10 - LTP
+		}
+}
+func (ob *ORDERBOOK)pubToWS(){
+	depth := ob.GetDepth()
+	ticker := ob.GetTicker()
+	outgoing2 := &redisManager.Outgoing{
+		Payload: redisManager.Data{
+			Depth: models.DepthType(depth),
+			Ticker: models.TickerType(ticker),
+		},
+	}
+	redisManager.PubToRedis(ob.StockSymbol, outgoing2 )
+}
+func(ob *ORDERBOOK)manageStocksAndInr(buyer string, toFill,strike int,mst models.StockEnum, e *Engine, ts *map[int]models.User){
 	sortedTimestamps := maps.Keys(*ts)
 	sort.Ints(sortedTimestamps)
 	tempToFill := toFill
@@ -213,13 +199,13 @@ func(ob *ORDERBOOK)manageStocksAndInr(buyer string, toFill,strike int,mst StockE
 				
 				_,existing := e.StockBalance.User[buyer].Symbol[ob.StockSymbol]
 				if !existing {
-					e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = StockType{
-						Type: map[StockEnum]Quantity{
-							YesStock: {
+					e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = models.StockType{
+						Type: map[models.StockEnum]models.Quantity{
+							models.YesStock: {
 								Available: 0,
 								Locked: 0,
 							},
-							NoStock :{
+							models.NoStock :{
 								Available: 0,
 								Locked: 0,
 							},
@@ -245,7 +231,7 @@ func (ob *ORDERBOOK)manageINR(buyer,seller string, qty,price int, e *Engine){
 	e.InrBalance.User[seller] = sellerBal
 }
 
-func (ob *ORDERBOOK)CalcFillableBuyQty( price,qty int, st StockTypeEnum) int {
+func (ob *ORDERBOOK)CalcFillableBuyQty( price,qty int, st models.StockTypeEnum) int {
 	strikes := ob.Sell.Type[st]
 	var temp int
 	remainingQty := qty
@@ -262,28 +248,28 @@ func (ob *ORDERBOOK)CalcFillableBuyQty( price,qty int, st StockTypeEnum) int {
 	return temp
 }
 
-func (ob *ORDERBOOK)ReverseOrder(redisChan,userId string, price,quantity int, st StockTypeEnum){
-	if st == Yes {
-		st = No
+func (ob *ORDERBOOK)ReverseOrder(redisChan,userId string, price,quantity int, st models.StockTypeEnum){
+	if st == models.Yes {
+		st = models.No
 	}else {
-		st = Yes
+		st = models.Yes
 	}
 
 	newStrikePrice := 10 - price
 	if _,typeExists := ob.Sell.Type[st]; !typeExists {
-		ob.Sell.Type[st] = StrikePrice{
-			Strike: map[int]Orders{},
+		ob.Sell.Type[st] =models.StrikePrice{
+			Strike: map[int]models.Orders{},
 		}
 	}
 	if _,strikeExists := ob.Sell.Type[st].Strike[newStrikePrice]; !strikeExists{
-		ob.Sell.Type[st].Strike[newStrikePrice] = Orders{
+		ob.Sell.Type[st].Strike[newStrikePrice] = models.Orders{
 			TotalOrders: 0,
-			TimeStamp: map[int]User{},
+			TimeStamp: map[int]models.User{},
 		}
 	}
 	strikePrice := ob.Sell.Type[st].Strike[newStrikePrice]
 	strikePrice.TotalOrders += quantity
-	strikePrice.TimeStamp[int(time.Now().Unix())] = User{
+	strikePrice.TimeStamp[int(time.Now().Unix())] = models.User{
 		ReverseOrder: true,
 		UserId: userId,
 		Quantity: quantity,
@@ -292,17 +278,17 @@ func (ob *ORDERBOOK)ReverseOrder(redisChan,userId string, price,quantity int, st
 	ob.Sell.Type[st].Strike[newStrikePrice] = strikePrice
 }
 
-func (ob *ORDERBOOK)fillReverseOrder(seller,buyer string ,price,qty int, mst StockEnum,e *Engine){
+func (ob *ORDERBOOK)fillReverseOrder(seller,buyer string ,price,qty int, mst models.StockEnum,e *Engine){
 	// buyer
 	_,existing := e.StockBalance.User[buyer].Symbol[ob.StockSymbol]
 	if !existing {
-		e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = StockType{
-			Type: map[StockEnum]Quantity{
-				YesStock: {
+		e.StockBalance.User[buyer].Symbol[ob.StockSymbol] = models.StockType{
+			Type: map[models.StockEnum]models.Quantity{
+				models.YesStock: {
 					Available: 0,
 					Locked: 0,
 				},
-				NoStock :{
+				models.NoStock :{
 					Available: 0,
 					Locked: 0,
 				},
@@ -318,21 +304,21 @@ func (ob *ORDERBOOK)fillReverseOrder(seller,buyer string ,price,qty int, mst Sto
 	e.InrBalance.User[buyer] = buyerBal
 
 	// seller
-	if mst == YesStock {
-		mst = NoStock
+	if mst == models.YesStock {
+		mst = models.NoStock
 	}else {
-		mst = YesStock
+		mst = models.YesStock
 	}
 
 	_,existingStocks := e.StockBalance.User[seller].Symbol[ob.StockSymbol]
 	if !existingStocks {
-		e.StockBalance.User[seller].Symbol[ob.StockSymbol] = StockType{
-			Type: map[StockEnum]Quantity{
-				YesStock: {
+		e.StockBalance.User[seller].Symbol[ob.StockSymbol] = models.StockType{
+			Type: map[models.StockEnum]models.Quantity{
+				models.YesStock: {
 					Available: 0,
 					Locked: 0,
 				},
-				NoStock :{
+				models.NoStock :{
 					Available: 0,
 					Locked: 0,
 				},
@@ -347,35 +333,27 @@ func (ob *ORDERBOOK)fillReverseOrder(seller,buyer string ,price,qty int, mst Sto
 	sellerBal.Locked -= qty * (10-price)
 	e.InrBalance.User[seller] = sellerBal
 }
-type tickerType struct {
-	ticker string
-	yesPrice int
-	noPrice int
-}
-func(ob *ORDERBOOK)GetTicker()tickerType{
-	ticker := tickerType {
-		ticker: ob.StockSymbol,
-		yesPrice: ob.CurrNoPrice,
-		noPrice: ob.CurrNoPrice,
+
+func(ob *ORDERBOOK)GetTicker()models.TickerType{
+	ticker := models.TickerType {
+		Ticker: ob.StockSymbol,
+		YesPrice: ob.CurrYesPrice,
+		NoPrice: ob.CurrNoPrice,
 	}
 
  	return ticker
 }
 
-type DepthType struct {
-	YesMarket map[int]int
-	NoMarket map[int]int
-}
-func (ob *ORDERBOOK)GetDepth(redisChan string)DepthType{
-	depth := DepthType{
+func (ob *ORDERBOOK)GetDepth()models.DepthType{
+	depth := models.DepthType{
 		YesMarket: map[int]int{},
 		NoMarket: map[int]int{},
 	}
 
-	for strike,orders := range ob.Sell.Type[Yes].Strike{
+	for strike,orders := range ob.Sell.Type[models.Yes].Strike{
 		depth.YesMarket[strike] = orders.TotalOrders
 	}
-	for strike,orders := range ob.Sell.Type[No].Strike{
+	for strike,orders := range ob.Sell.Type[models.No].Strike{
 		depth.NoMarket[strike] = orders.TotalOrders
 	}
 	return depth

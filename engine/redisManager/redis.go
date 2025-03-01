@@ -17,15 +17,16 @@ Once sync.Once
 )
 
 type Data struct {
-	UserId 	      string 			`json:"userId,omitempty"`
-	Markets       []models.Market  `json:"markets"`
-	INRBalance 	  models.UserBalance
-	StockBalance  models.StockSymbol
-	SellOBYes     models.StrikePrice
-	SellOBNo      models.StrikePrice
-	FilledOrders  int
-	PendingOrders int
-	Depth 		  models.DepthType
+	UserId 	      string 			 `json:"userId,omitempty"`
+	Markets       []models.Market  	 `json:"markets,omitempty"`
+	INRBalance 	  models.UserBalance `json:"inrbalance,omitempty"`
+	StockBalance  models.StockSymbol `json:"stockbalance,omitempty"`
+	SellOBYes     models.StrikePrice `json:"sellOBYes,omitempty"`
+	SellOBNo      models.StrikePrice `json:"sellOBNo,omitempty"`
+	FilledOrders  int				 `json:"filledOrders,omitempty"`
+	PendingOrders int 	 			 `json:"pendingOrders,omitempty"`
+	Depth 		  models.DepthType   `json:"depth,omitempty"`
+	Ticker        models.TickerType  `json:"ticker,omitempty"`
 }
 
 type Outgoing struct {

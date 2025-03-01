@@ -1,10 +1,10 @@
 function Hero() {
   return (
-    <div className="h-screen">
-      <div className="bg-neutral-200 h-1/2">
-        <div className="bg-neutral-200 flex justify-between items-end max-w-7xl mx-auto h-full">
+    <div className="">
+      <div className="bg-neutral-200">
+        <div className="bg-neutral-200 flex justify-between items-center max-w-7xl mx-auto h-full">
           <div className="bg-neutral-200 h-full w-full p-10">
-            <h1 className="text-7xl mt-28 font-light tracking-wider font-sans">
+            <h1 className="text-7xl font-light tracking-wider font-sans">
               India's Leading
             </h1>
             <h2 className="text-6xl font-extralight tracking-normal mt-3 font-sans">
@@ -27,28 +27,36 @@ function Hero() {
               </button>
             </div>
           </div>
-          <img
-            src="https://probo.in/_next/image?url=https%3A%2F%2Fd39axbyagw7ipf.cloudfront.net%2Fimages%2Fhome%2Fheader%2Fheader-23012025.webp&w=640&q=75"
-            className="max-w-[35rem] min-h-[37rem]"
-          />
+          <div className="w-[80rem] h-[40rem] flex items-end justify-center">
+            <img
+              src="https://probo.in/_next/image?url=https%3A%2F%2Fd39axbyagw7ipf.cloudfront.net%2Fimages%2Fhome%2Fheader%2Fheader-23012025.webp&w=640&q=75"
+              className="w-auto h-auto max-w-full max-h-full object-contain"
+            />
+          </div>
         </div>
       </div>
       <div className="bg-neutral-800 h-1/2">
         <div className="bg-neutral-800 grid grid-cols-2 max-w-7xl mx-auto">
           <div>
-            <div>
-              <span>Samachar</span>
-              <span>Vichar</span>
-              <span>Vyapaar</span>
+            <div className="bg-neutral-800 h-full flex flex-col justify-center px-4">
+              <div className="flex gap-10 text-4xl tracking-wider font-medium mb-8">
+                <span className="text-neutral-100">Samachar</span>
+                <span className="text-neutral-500">Vichaar</span>
+                <span className="text-neutral-500">Vyapaar</span>
+              </div>
+              <p className="text-2xl tracking-widest text-neutral-200">
+                Lorem ipsum dolor sit amet, consectetur adipisicing elit. Quas
+                esse, repudiandae alias laborum at impedit quo eveniet ea
+              </p>
             </div>
           </div>
-          <div className="flex justify-center items-center p-4">
+          <div className="flex justify-center items-center p-10">
             <div className="border-2 border-neutral-700 p-2 rounded-[2.5rem]">
               <video
                 autoPlay
                 loop
                 muted
-                className="max-h-[37rem] bg-amber-50 rounded-4xl"
+                className="max-h-[35rem] bg-amber-50 rounded-4xl"
                 src="https://d39axbyagw7ipf.cloudfront.net/videos/info-video.mp4"
               />
             </div>
